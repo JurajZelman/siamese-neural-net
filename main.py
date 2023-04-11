@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-from efficientnet_pytorch import EfficientNet
+import torchvision
 from numpy import linalg as LA
 from PIL import Image
 from torch.autograd import Variable
@@ -12,22 +12,19 @@ from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-# Team: Mlers
-
 # Main references:
 # https://towardsdatascience.com/a-friendly-introduction-to-siamese-networks-85ab17522942
 # Paper: https://arxiv.org/pdf/1404.4661.pdf
 
 # Define constants and settings
-VERSION = "v5"
+VERSION = "v3"
 PATH = ""
-IMAGE_SIZE = (250, 250)
-BATCH_SIZE = 16
+IMAGE_SIZE = (224, 224)  # Default image size for Resnet18
+BATCH_SIZE = 128
 EPOCHS = 1
-LOAD_EPOCH = EPOCHS - 1  # Loads the model from the last epoch
 LEARNING_RATE = 0.001
 MOMENTUM = 0.9
-WEIGHT_DECAY = 0.001  # Originally 0.0001, incrased to regularize the model
+WEIGHT_DECAY = 0.00001
 NESTEROV = True
 TRAIN_FILE = "train_triplets_split.txt"
 TEST_FILE = "test_triplets.txt"
@@ -37,8 +34,6 @@ VAL_FILE = "validation_triplets_split.txt"
 
 np.random.seed(42)
 torch.manual_seed(42)
-
-print("Training net 5 with EfficientNet with batch 16 and img size 250.")
 
 # -----------------------------------------------------------------------------
 # Neural network architecture
@@ -71,25 +66,20 @@ class SiameseNeuralNetwork(torch.nn.Module):
 class FeatureExtractorNetwork(torch.nn.Module):
     """
     Pretrained Neural Network used for extracting image features.
-    Currently, this is the EfficientNet-b4 network with a customized fc layer.
+    Currently, this is the ResNet18 network with a customized fc layer.
     """
 
     def __init__(self):
         """Initializes the feature extractor."""
         super().__init__()
 
-        # Initialize EfficientNet with customized fc layer
-        self.efficientnet = EfficientNet.from_pretrained("efficientnet-b4")
-        self.efficientnet._fc = torch.nn.Linear(
-            in_features=self.efficientnet._fc.in_features,
-            out_features=1024,
-            bias=True,
-        )
-        self.efficientnet._swish = torch.nn.Identity()
+        # Initialize the ResNet18 network (with customized fc layer)
+        self.resnet = torchvision.models.resnet18(pretrained=True)
+        self.resnet.fc = torch.nn.Linear(512, 1024)  # Double the size
 
     def forward(self, x):
         """Forward pass of the network."""
-        x = self.efficientnet(x)
+        x = self.resnet(x)
         return x
 
 
@@ -163,13 +153,16 @@ def get_mean_and_std(root_input, norm_transform):
     """
     print("-------- Calculating mean and std of the dataset --------")
     dataset = NormalizationDataset(root_input, norm_transform)
-    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+    data_loader = DataLoader(dataset, batch_size=100, shuffle=False)
 
     channels_sum, channels_sq_sum, num_batches = 0, 0, 0
     for data in data_loader:
         channels_sum += torch.mean(data, dim=(0, 2, 3))
         channels_sq_sum += torch.mean(data**2, dim=(0, 2, 3))
         num_batches += 1
+
+        if num_batches % 10 == 0:
+            print(f"Processed {num_batches*100} images.")
 
     mean = channels_sum / num_batches
     std = ((channels_sq_sum / num_batches) - mean**2) ** 0.5
@@ -191,9 +184,6 @@ def get_data_loaders(root_input, IMAGE_SIZE, BATCH_SIZE):
     # WARNING: Run this function if the dataset changes and replace the
     #          mean and std with the new ones.
     # data_mean, data_std = get_mean_and_std(root_input, norm_transforms)
-    # print("Mean: ", data_mean)
-    # print("Std: ", data_std)
-
     data_mean = [0.6082, 0.5161, 0.4123]
     data_std = [0.2617, 0.2719, 0.2934]
 
@@ -218,7 +208,7 @@ def get_data_loaders(root_input, IMAGE_SIZE, BATCH_SIZE):
 
 
 def main():
-    print(f"---------- MODEL Siamese Network {VERSION} ----------")
+    print(f"---------- MODEL Siamese Network {VERSION}----------")
     print("----------------- LOADING DATA -----------------")
     # Load the data
     train_loader, test_loader, val_loader = get_data_loaders(
@@ -230,8 +220,7 @@ def main():
     model = SiameseNeuralNetwork(FeatureExtractorNetwork()).cuda()
 
     # Define loss function and optimizer
-    # TripletLoss - Set higher margin to learn to distinguish distances
-    loss_fn = torch.nn.TripletMarginLoss(margin=5.0)
+    loss_fn = torch.nn.TripletMarginLoss(margin=0.5)
     optim = SGD(
         model.parameters(),
         lr=LEARNING_RATE,
@@ -239,9 +228,6 @@ def main():
         weight_decay=WEIGHT_DECAY,
         nesterov=NESTEROV,
     )
-    # optim = torch.optim.Adam(
-    #     model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
-    # )
 
     print("----------------- TRAINING THE MODEL -----------------")
     # Train the Siamese Network
@@ -284,7 +270,7 @@ def main():
             loss_epoch += loss.data
 
             if batch % 10 == 0:
-                print(f"Batch {batch} loss: {loss.data:.6f}")
+                print(f"Batch loss: {loss.data:.6f}")
 
         train_loss_predict /= len(train_loader)
         loss_epoch = loss_epoch / len(train_loader)
@@ -292,6 +278,7 @@ def main():
         # Validate the model
         model.eval()
         for batch, (image1, image2, image3) in enumerate(val_loader):
+
             batch_size = image1.shape[0]  # Might differ for the last batch
 
             # Move to GPU
@@ -319,7 +306,7 @@ def main():
         )
 
         # Save the model state
-        save_path = f"model-siam-net-{VERSION}_epoch_{epoch}.pt"
+        save_path = f"model-siam-net-v3_epoch_{epoch}.pt"
         torch.save(
             {
                 "epoch": epoch,
@@ -330,18 +317,9 @@ def main():
         )
         print(f"Saved model checkpoint to {save_path}")
 
-    # model_loaded = model
-
-    # Load from saved models
-    model_name = f"model-siam-net-{VERSION}_epoch_{LOAD_EPOCH}.pt"
-    print("Loading model: ", model_name)
-    model_loaded = SiameseNeuralNetwork(FeatureExtractorNetwork()).cuda()
-    checkpoint = torch.load(model_name)
-    model_loaded.load_state_dict(checkpoint["model_state_dict"])
-
     print("----------------- CALCULATING PREDICTIONS -----------------")
     # Calculate predictions
-    model_loaded.eval()
+    model.eval()
 
     test_predictions = []
 
@@ -358,9 +336,7 @@ def main():
         )
 
         with torch.no_grad():
-            img1_feat, img2_feat, img3_feat = model_loaded(
-                image1, image2, image3
-            )
+            img1_feat, img2_feat, img3_feat = model(image1, image2, image3)
 
         # Calculate distances between images
         diff_12 = (img1_feat - img2_feat).cpu().detach().numpy()
@@ -373,7 +349,7 @@ def main():
     # Complete the predictions and save to a txt file
     print("----------------- SAVING PREDICTIONS -----------------")
     predictions = np.hstack(test_predictions)
-    np.savetxt(f"predictions-{VERSION}-loaded.txt", predictions, fmt="%d")
+    np.savetxt(f"predictions-{VERSION}.txt", predictions, fmt="%d")
     print("----------------- SCRIPT FINISHED -----------------")
 
 
