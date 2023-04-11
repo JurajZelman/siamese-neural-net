@@ -6,7 +6,9 @@ The goal of this task was to make decisions on food similarity based on images a
 
 Together with the image dataset, there is a set of triplets (A, B, C) provided, representing the human annotations. The human annotator judged the taste of dish A as more similar to the taste of dish B than the taste of dish C. A sample of such triplets is shown below.
 
-<div style="text-align:center"><img src="images/sample_triplets.jpg" width="400" height="400"></div>
+<p align="center">
+  <img src="images/sample_triplets.jpg" width="400" height="400">
+</p>
 
 The task is to train a neural network to predict the similarity of two dishes based on the previously unseen image triplets.
 
