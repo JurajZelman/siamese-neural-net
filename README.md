@@ -26,3 +26,4 @@ where $d(x_i,y_i)=∥x_i−y_i∥_p$ denotes the distance between the two vector
 - [Towards Data Science - A friendly Introduction to Siamese Networks - Sean Benhur (2020)](https://towardsdatascience.com/a-friendly-introduction-to-siamese-networks-85ab17522942)
 - [Learning fine-grained image similarity with deep ranking - Wang et al. (2014)](https://openaccess.thecvf.com/content_cvpr_2014/papers/Wang_Learning_Fine-grained_Image_2014_CVPR_paper.pdf)
 - [Siamese Network Training Using Artificial Triplets By Sampling and Image Transformation - Abbas, Moser (2021)](https://arxiv.org/abs/2106.07015)
+- [Deep Residual Learning for Image Recognition - He et al. (2015)](https://arxiv.org/pdf/1512.03385.pdf)
